@@ -1,0 +1,132 @@
+\begin{lstlisting}[style=CStyle]
+/*
+Magneto-Optical Trapping Simulation - Header file
+Header release version: v1.0
+
+
+Contains auxiliary functions for the Magneto-Optical Trapping Simulation code.
+
+
+
+
+Ramon Gabriel Teixeira Rosa, PhD
+Optics and Photonics Research Center (CePOF)
+University of Sao Paulo - Sao Carlos Institute of Physics
+ramongabriel.tr@usp.br
++55(16)3373.9810 (Ext: 225)
+
+May 29, 2018
+*/
+
+#include <stdio.h>
+#include <math.h>
+#include <time.h>
+#include <stdlib.h>
+#include <complex.h>
+#define pi 3.14159265359
+
+//Creates evenly spaced array
+void linspace(double xi,double xf,int N,double x[]){
+    int i;
+
+    if(N==1)
+        x[0] = xi;
+    else{
+        for (i=0;i<N;i++)
+            x[i] = xi + (xf-xi)*i/(N-1);
+    }
+}
+
+//Pipes data to gnuplot (not being used)
+void plotGNU (double x[], double y[],int NUM_ELEMENTS,char options[]){
+    int i;
+
+    FILE *gp = popen("\"C:/Program Files/gnuplot/bin/gnuplot.exe\" -persistent", "w");
+    if(gp==NULL)
+        printf("\n\nERROR OPENING GNUPLOT\n\n");
+    else{
+        fprintf(gp,"%s\n",options);
+        fprintf(gp,"plot '-' with lines\n");
+        for (i=0;i<NUM_ELEMENTS;i++){
+            fprintf(gp,"%f %f\n",(double)x[i],(double)y[i]);
+            //printf("%f %f\n",(double)x[i],(double)y[i]);
+        }
+        fprintf(gp, "e\n");
+        fflush(gp);
+    }
+}
+
+// Returns random number on the interval [0,1]
+double randr(){
+    return ((double)rand() / (double)(RAND_MAX));
+}
+
+// Returns random number following a exponential decay probability function with average 1
+double RandomExpDist(){
+    double tau;
+    tau = -log(1- ((double)rand() / (double)(RAND_MAX + 1)) );
+    return tau;
+}
+
+// Returns random number following gaussian distribution with standard deviation 1 and mean 0
+double gaussian(void){
+    //Box-Muller transform
+    static double v, fac;
+    static int phase = 0;
+    double S, Z, U1, U2, u;
+
+    if (phase)
+        Z = v * fac;
+    else
+    {
+        do
+        {
+            U1 = (double)rand() / RAND_MAX;
+            U2 = (double)rand() / RAND_MAX;
+
+            u = 2. * U1 - 1.;
+            v = 2. * U2 - 1.;
+            S = u * u + v * v;
+        } while(S >= 1);
+
+        fac = sqrt (-2. * log(S) / S);
+        Z = u * fac;
+    }
+
+    phase = 1 - phase;
+
+    return Z;
+}
+
+// Returns number following Maxwell-Boltzmann velocity distribution using sqrt(k*T/m)=1
+double MaxwellBoltzmann(){
+    // Multiply output by k*T/m for correct velocity distribution
+    double x1 = gaussian();
+    double x2 = gaussian();
+    double x3 = gaussian();
+    return sqrt(x1*x1 + x2*x2 + x3*x3);
+}
+
+// Returns absolute value of inner product between complex vectors of size 3
+double AbsDotProductComplex(double complex A[],double complex B[]){
+    double complex S=0;
+    int i;
+    for (i=0;i<3;i++)
+        S = S + A[i]*conj(B[i]);
+    return (double)cabs(S);
+}
+
+// Returns dot product between vectors of size 3
+double dotproduct(double A[],double B[]){
+    double S=0;
+    int i;
+    for (i=0;i<3;i++)
+        S = S + A[i]*B[i];
+    return S;
+}
+
+// Returns norm of vector of size 3
+double norm (double v[]){
+    return sqrt(dotproduct(v,v));
+}
+\end{lstlisting}

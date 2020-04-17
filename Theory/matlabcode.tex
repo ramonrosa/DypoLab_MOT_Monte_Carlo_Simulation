@@ -1,0 +1,265 @@
+\begin{lstlisting}[style=MatlabStyle]
+function [DT,TTm] = MOTsim_ViewResults1 (plotresults)
+	if(nargin==0)
+        plotresults=1;
+	end
+
+    close all;
+    
+    OVERLAY_XY_HIST = 0;
+
+    %% Select folder with results
+    PATH = uigetdir('../Results/','Select folder');
+    %PATH = 'G:\Meu Drive\PosDoc\2018\Simulacoes\MOT_Simulation_v1\Results\TESTE';
+
+    %% Get files names
+    FILES = ls(strcat(PATH,'/*.dat'));
+    N = size(FILES,1);       
+    for k=1:N
+        if(strcmp(strtrim(FILES(k,:)),'Trapping_Time.dat'))
+            FILES = FILES([1:k-1,k+1:N],:);
+            break;
+        end
+    end
+    N = N-1;
+    
+    
+    %% Read 
+    wbh = waitbar(0,'Loading files');
+    filename = strcat(PATH,'/',strtrim(FILES(1,:)));
+    M = importdata(filename);
+    HEADER = M.textdata;
+    DATA = M.data;
+    splL7 = strsplit(HEADER{7},{'=','('});
+    detuning = str2double(splL7{2});
+    H = DATA(2:end,2:end);
+    H = H/sum(H(:));
+    x = DATA(1,2:end);
+    z = DATA(2:end,1);
+    x=x(:);
+    z=z(:);
+    NX = size(H,1);
+    NY = size(H,2);
+
+    MH = zeros(NX,NY,N);
+    MD = zeros(N,1);
+    
+    MH(:,:,1) = H;
+    MD(1) = detuning;
+
+    
+    
+    waitbar(1,wbh);
+    for k=2:N
+        filename = strcat(PATH,'/',strtrim(FILES(k,:)));
+        M = importdata(filename);
+        HEADER = M.textdata;
+        DATA = M.data;
+        splL7 = strsplit(HEADER{7},{'=','('});
+        detuning = str2double(splL7{2});
+        H = DATA(2:end,2:end);
+        H = H/sum(H(:));
+        MH(:,:,k) = H;
+        MD(k) = detuning;
+        waitbar(k/N,wbh);
+    end
+    close(wbh);
+    
+    
+	%% Read Trapping_Time file
+    MT = importdata(strcat(PATH,'/','Trapping_Time.dat'));
+    DT = MT(:,1);
+    TT = MT(:,2:end);
+    [MD,siMD] = sort(MD);
+    MH = MH(:,:,siMD);
+    [DT,siDT] = sort(DT);
+    TT = TT(siDT,:);
+    TTm = mean(TT,2);
+    FILES=FILES(siMD,:);
+    
+    Navg = size(TT,2);
+    
+    TTbinsMAX = 6*max(TTm(:));
+    TTbins = linspace(0,TTbinsMAX,50);
+    TTcounts = hist(TT',TTbins);
+    
+    %% Calculate z-mean and z-std
+    zmean=bsxfun(@rdivide,sum(sum(bsxfun(@times,z,MH),1),2),sum(sum(MH,1),2));
+    zmean=zmean(:);
+    
+    zstd=sqrt(bsxfun(@rdivide,sum(sum(bsxfun(@times,z.^2,MH),1),2),sum(sum(MH,1),2)) - bsxfun(@rdivide,sum(sum(bsxfun(@times,z,MH),1),2),sum(sum(MH,1),2)).^2);
+    zstd=zstd(:);
+    
+    if(plotresults)
+        if(N>1)
+            %% Plot
+            fh1=figure('units','normalized','outerposition',[0.50 0.05 0.50 0.45]); %#ok
+                plot(DT,TTm,'Marker','o','MarkerEdgeColor',[0 0 0],'MarkerFaceColor',[.49 1 .63],'LineStyle','-','Linewidth',2,'Color',[0 0 1]);
+                xlim([min(DT),max(DT)]);
+                ylim([0,1.05*max(TTm)]);
+                set(gca, 'XDir','reverse');
+                xlabel('Detuning (units of \Gamma)');
+                ylabel('Average trapping time (s)');
+
+            Qx=1;
+            fh2=figure('units','normalized','outerposition',[0.20 0.50 0.60 0.50]);  
+            fh2sp1 = subplot(1,2,1);
+            fh2sp2 = subplot(1,2,2);
+            set(fh2sp1,'units','normalized','position',[0.05 0.10 0.40 0.80]);
+            set(fh2sp2,'units','normalized','position',[0.50 0.10 0.30 0.80]);
+            detslide = uicontrol('Style','slider','min',1,'max',N,'SliderStep',[1/N 5/N],'Value',1,'units','normalized','Position',[0.85 0.80 0.14 0.03],'Callback',@UpdateHist2D);
+            uicontrol('Style','text','String','Detuning','units','normalized','Position',[0.85 0.83 0.15 0.03],'HorizontalAlignment','Left');
+            ovrlcontrol = uicontrol('Style','checkbox','min',0,'max',1,'value',0,'units','normalized','Position',[0.85 0.70 0.04 0.04],'Callback',@UpdateHist2D);
+            overlslide = uicontrol('Style','slider','min',0,'max',1,'Value',0.1,'units','normalized','Position',[0.87 0.70 0.10 0.03],'Callback',@UpdateHist2D);
+            uicontrol('Style','text','String','Overlay 1D x/z histograms','units','normalized','Position',[0.85 0.74 0.15 0.03],'HorizontalAlignment','Left');
+            uicontrol('Style','pushbutton','String','Save results','units','normalized','position',[0.85 0.5 0.14 0.06],'Callback',@SaveAllResults);
+            UpdateHist2D();
+
+            fh3=figure('units','normalized','outerposition',[0.00 0.05 0.50 0.45]);  %#ok
+                errorbar(MD,zmean*1000,zstd*1000,'Marker','o','MarkerFaceColor',[1 0.3 0.3],'MarkerEdgeColor',[0 0 0],'color',[0 0 0],'linestyle','-');
+                set(gca, 'XDir','reverse');
+                xlabel('Detuning (units of \Gamma)');
+                ylabel('{\langle}z{\rangle} (mm)');
+        else
+            imagesc(x*1e3,z*1e3,MH(:,:));
+            xlabel('x (mm)');
+            ylabel('z (mm)');
+            set(gca, 'YDir','normal');
+            colorbar;
+            axis image;
+            title(sprintf('Detuning = %.0f \\Gamma',MD(1)));
+        end
+    end
+    
+
+        
+    function UpdateHist2D (~,~)
+        Qx = round(get(detslide,'Value'));
+        set(detslide,'Value',Qx);
+        Q = N+1-Qx;
+        
+        OVERLAY_XY_HIST = get(ovrlcontrol,'Value');
+        SCALEOVERLAY  = get(overlslide,'Value')*abs(x(1)-x(end))*1000;
+        
+        figure(fh2);
+        
+        subplot(fh2sp1);
+            imagesc(x*1e3,z*1e3,MH(:,:,Q));
+            xlabel('x (mm)');
+            ylabel('z (mm)');
+            set(gca, 'YDir','normal');
+            colorbar;
+            axis image;
+            title(sprintf('Detuning = %.0f \\Gamma',MD(Q)));
+            if(OVERLAY_XY_HIST)
+                hold on;
+                    Xc = sum(MH(:,:,Q),1);
+                    Zc = sum(MH(:,:,Q),2);
+                    Xc = Xc'/max(Xc(:));
+                    Zc = Zc/max(Zc(:));
+                    fillh1 = fill(1000*[x;x(end);x(1);],[Xc;Xc(end);Xc(1)]*SCALEOVERLAY + 1000*min(z),[1 0 0]);
+                    alpha(fillh1,0.3);
+                    plot(x*1000,Xc*SCALEOVERLAY + 1000*min(z),'color',[1 0 0],'linewidth',2);
+                    fillh2 = fill([Zc;Zc(end);Zc(1)]*SCALEOVERLAY + 1000*min(x),[z;z(end);z(1)]*1000,[1 0 0]);
+                    alpha(fillh2,0.3);
+                    plot(Zc*SCALEOVERLAY + 1000*min(x),z*1000,'color',[1 0 0],'linewidth',2);
+                hold off;
+            end
+            
+        subplot(fh2sp2);
+            bar(TTbins,100*TTcounts(:,Q)/Navg,'BarWidth',1,'FaceColor',[0.5 0.5 1],'EdgeColor',[0 0 1]);
+            xlim([0,TTbinsMAX]);
+            ylim([0,1.05*100*max(TTcounts(:,Q))]/Navg);
+            xlabel('Trapping time (s)');
+            ylabel('Relative frequency (%)');
+        
+    end
+
+
+
+    function SaveAllResults(~,~)
+        if(exist(strcat(PATH,'\Results\'),'dir')==0)
+            mkdir(strcat(PATH,'\Results\'));
+        end
+        
+        OVERLAY_XY_HIST = get(ovrlcontrol,'Value');
+        SCALEOVERLAY  = get(overlslide,'Value')*abs(x(1)-x(end))*1000;
+        
+        close all;
+        
+        
+        
+        fprintf('Saving: %4.1f%%\n',((0)/(N+2))*100);
+        fhH1 = figure('visible','off');
+            plot(DT,TTm,'Marker','o','MarkerEdgeColor',[0 0 0],'MarkerFaceColor',[.49 1 .63],'LineStyle','-','Linewidth',2,'Color',[0 0 1]);
+            xlim([min(DT),max(DT)]);
+            ylim([0,1.05*max(TTm)]);
+            set(gca, 'XDir','reverse');
+            xlabel('Detuning (units of \Gamma)');
+            ylabel('Average trapping time (s)');
+            
+            set(gcf, 'PaperUnits','inches');
+            set(gcf, 'PaperPositionMode','Manual');
+            set(gcf, 'PaperPosition', [0 0 6 4]);
+            print(fhH1,strcat(PATH,'\Results\TrappingTime.png'),'-r500','-dpng');
+        fprintf('Saving: %4.1f%%\n',((1)/(N+2))*100);
+        
+        fhH3 = figure('visible','off');
+            errorbar(MD,zmean*1000,zstd*1000,'Marker','o','MarkerFaceColor',[1 0.3 0.3],'MarkerEdgeColor',[0 0 0],'color',[0 0 0],'linestyle','-');
+            set(gca, 'XDir','reverse');
+            xlabel('Detuning (units of \Gamma)');
+            ylabel('{\langle}z{\rangle} (mm)');
+        
+            set(gcf, 'PaperUnits','inches');
+            set(gcf, 'PaperPositionMode','Manual');
+            set(gcf, 'PaperPosition', [0 0 6 4]);
+            print(fhH3,strcat(PATH,'\Results\z_avg_std.png'),'-r500','-dpng');
+        fprintf('Saving: %4.1f%%\n',((2)/(N+2))*100);
+        
+        fhH2 = figure('visible','off');
+        fhH2sp1=subplot(1,2,1);
+        fhH2sp2=subplot(1,2,2);
+        set(fhH2sp1,'units','normalized','position',[0.05 0.15 0.55 0.8]);
+        set(fhH2sp2,'units','normalized','position',[0.70 0.15 0.25 0.8]);
+        
+        for n=1:N
+            subplot(fhH2sp1);
+                imagesc(x*1e3,z*1e3,MH(:,:,n));
+                xlabel('x (mm)');
+                ylabel('z (mm)');
+                set(gca, 'YDir','normal');
+                colorbar;
+                axis image;
+                title(sprintf('Detuning = %.0f \\Gamma',MD(n)));
+                if(OVERLAY_XY_HIST)
+                    hold on;
+                    Xc = sum(MH(:,:,n),1);
+                    Zc = sum(MH(:,:,n),2);
+                    Xc = Xc'/max(Xc(:));
+                    Zc = Zc/max(Zc(:));
+                    fillh1 = fill(1000*[x;x(end);x(1);],[Xc;Xc(end);Xc(1)]*SCALEOVERLAY + 1000*min(z),[1 0 0]);
+                    alpha(fillh1,0.3);
+                    plot(x*1000,Xc*SCALEOVERLAY + 1000*min(z),'color',[1 0 0],'linewidth',2);
+                    fillh2 = fill([Zc;Zc(end);Zc(1)]*SCALEOVERLAY + 1000*min(x),[z;z(end);z(1)]*1000,[1 0 0]);
+                    alpha(fillh2,0.3);
+                    plot(Zc*SCALEOVERLAY + 1000*min(x),z*1000,'color',[1 0 0],'linewidth',2);
+                    hold off;
+                end
+
+            subplot(fhH2sp2);
+                bar(TTbins,100*TTcounts(:,n)/Navg,'BarWidth',1,'FaceColor',[0.5 0.5 1],'EdgeColor',[0 0 1]);
+                xlim([0,TTbinsMAX]);
+                ylim([0,1.05*100*max(TTcounts(:,n))]/Navg);
+                xlabel('Trapping time (s)');
+                ylabel('Relative frequency (%)');
+
+                set(gcf, 'PaperUnits','inches');
+                set(gcf, 'PaperPositionMode','Manual');
+                set(gcf, 'PaperPosition', [0 0 8 4]);
+                [~,flnm,~] = fileparts(FILES(n,:));
+                print(fhH2,strcat(PATH,'\Results\',flnm,'.png'),'-r500','-dpng');
+            fprintf('Saving: %4.1f%%\n',((2+n)/(N+2))*100);
+        end
+    end
+end
+\end{lstlisting}
